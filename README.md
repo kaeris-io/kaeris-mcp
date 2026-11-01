@@ -121,6 +121,7 @@ Restart the client; the KAERIS tools appear automatically.
 | `KAERIS_OPENROUTER_KEY` | OpenRouter key for Lifetime/BYOK — no monthly volume cap |
 | `KAERIS_API_URL` | Override the API base URL |
 | `KAERIS_NO_UPDATE_CHECK` | Set to `1` to turn off the once-a-day "new version available" line (stderr only; already off in CI) |
+| `KAERIS_NO_CTA` | Set to `1` to drop the pricing link from the error a tool returns when a run is refused on a plan limit |
 
 No key is required to try it — the free demo works out of the box.
 

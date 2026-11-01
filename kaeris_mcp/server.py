@@ -586,6 +586,29 @@ def _unknown_langs_reply(unknown):
         "codes (de, ja, pt-BR, zh-Hant …). Nothing was sent and nothing was charged.")}
 
 
+# A run refused on a plan limit names the pricing page, tagged as ours: the site reads the source
+# of a visit only from ?utm_source= (not ?ref=), and a link an agent passes on has no referrer.
+# The API tags its own link utm_source=api; read through this server it is utm_source=mcp. Any
+# other failure carries no link. KAERIS_NO_CTA=1 turns it off. It travels in the tool's error,
+# never on stdout (that is the protocol). The sentences are the server's (backend/main.py); the
+# per-minute rate limit is not among them: waiting fixes it, a plan does not.
+_PRICING_URL = "https://kaeris.dev/pricing.html?utm_source=mcp"
+_PLAN_LIMIT = re.compile(
+    r"File exceeds free tier|File exceeds limit|on your plan\)|languages per file|"
+    r"Verify meaning works on up to|today's free allowance|free demo is at capacity|"
+    r"free tier is at capacity|are left of your|Monthly volume limit reached|"
+    r"Webhooks are available on",
+    re.IGNORECASE)
+
+
+def _refusal(error):
+    """The text of a KaerisError for the agent, with the pricing link on a plan limit."""
+    msg = re.sub(r"(kaeris\.dev/[\w./-]*\?utm_source=)(?:api|cli)\b", r"\g<1>mcp", str(error))
+    off = os.environ.get("KAERIS_NO_CTA", "").strip().lower() not in ("", "0", "false", "no")
+    if not off and _PLAN_LIMIT.search(msg) and _PRICING_URL not in msg:
+        msg = f"{msg.rstrip()} Plans and limits: {_PRICING_URL}"
+    return msg
+
 def _client(api_key="", openrouter_key=""):
     return KaerisClient(
         api_url=os.environ.get("KAERIS_API_URL", "https://kaeris.dev"),
@@ -932,7 +955,7 @@ def kaeris_add_language(
     except KaerisTimeout as e:
         return _still_running(e.job_id, {"lang": lang})
     except KaerisError as e:
-        raise RuntimeError(str(e))
+        raise RuntimeError(_refusal(e))
 
     if lang in (status.get("failed_langs") or []):
         raise RuntimeError(f"Translation for '{lang}' failed and returned source text — not written")
@@ -1032,7 +1055,7 @@ def kaeris_translate(
     except KaerisTimeout as e:
         return _still_running(e.job_id, {"languages": target_languages})
     except KaerisError as e:
-        raise RuntimeError(str(e))
+        raise RuntimeError(_refusal(e))
 
     failed = status.get("failed_langs") or []
     translations = {}
@@ -1165,7 +1188,7 @@ def kaeris_translate_file(
     except KaerisTimeout as e:
         return _still_running(e.job_id, {"languages": target_languages})
     except KaerisError as e:
-        raise RuntimeError(str(e))
+        raise RuntimeError(_refusal(e))
 
     # Resolve (and check) every destination first — see kaeris_add_language.
     plan = [(_target_locale_path(file_path, os.path.splitext(os.path.basename(name))[0],
@@ -1300,7 +1323,7 @@ def _translate_file_incremental(client, path, out, languages, keep=None, tone=""
             broken_by_lang[lang] = set(todo)
             continue
         except KaerisError as e:
-            raise RuntimeError(str(e))
+            raise RuntimeError(_refusal(e))
         # Don't merge a failed (source-fallback) result — it would poison existing translations
         if lang in (status.get("failed_langs") or []):
             failed.append(lang)
