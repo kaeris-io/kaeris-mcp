@@ -12,7 +12,7 @@ body:
     attributes:
       label: Version
       description: "Output of pip show kaeris-mcp, and the MCP client you use."
-      placeholder: "kaeris-mcp 0.2.17, Claude Desktop"
+      placeholder: "kaeris-mcp 0.2.18, Claude Desktop"
     validations:
       required: true
   - type: input
