@@ -443,6 +443,21 @@ def _source_ext(path):
     return os.path.splitext(path)[1] or ".json"
 
 
+def _diff_by_target_forms(source_flat, target_flat, lang):
+    """(missing, extra, placeholder issues, plural faults) as `kaeris check` reads them: plural
+    sets by the TARGET language's CLDR forms. Since kaeris 0.2.47 translate writes every form a
+    language needs, so a Polish file has `items_few` / `items_many` that the English source does
+    not — forms the file owes, not "extra/stale" keys an agent might delete. A Japanese file
+    without `items_one` is complete. Faults are (msg, severity). An installed kaeris without that
+    reading (before 0.2.44) gives the plain key diff, as before."""
+    missing, extra, issues = chk.diff_locale(source_flat, target_flat)
+    read = getattr(chk, "plural_set_faults", None) or getattr(chk, "_plural_set_faults", None)
+    if read is None:
+        return missing, extra, issues, []
+    faults, missing, extra = read(source_flat, target_flat, missing, extra, lang)
+    return missing, extra, issues, faults
+
+
 def _load_flat(path, client=None):
     """Flat {key: value} for a locale file of ANY supported format. JSON is parsed locally
     (fast, offline, no network); every other format (.arb/.strings/.po/.xml/.ftl/…) is parsed
@@ -668,7 +683,8 @@ def kaeris_status(source: str, langs: list = None, out: str = "") -> dict:
     offline; other formats (.arb/.strings/.po/.xml/.ftl/…) are parsed by the backend
     /api/parse endpoint (no translation, no cost).
 
-    For each target language reports missing keys, extra/stale keys,
+    For each target language reports missing keys, extra/stale keys (a plural
+    form the target language needs, e.g. Polish "items_few", is never extra),
     placeholder mismatches (e.g. "Hello {name}" -> "Bonjour" loses {name}, or
     "{name}" -> "{nom}" which crashes str.format()/ICU at runtime), and the same
     quality detectors the CLI firewall gates a merge on: number drift
@@ -742,10 +758,17 @@ def kaeris_status(source: str, langs: list = None, out: str = "") -> dict:
             result["missing"][lang] = sorted(source_flat)
             result["ok"] = False
             continue
-        missing, extra, issues = chk.diff_locale(source_flat, target_flat)
+        missing, extra, issues, plural_faults = _diff_by_target_forms(source_flat, target_flat, lang)
         if missing:
             result["missing"][lang] = missing
             result["ok"] = False
+        for msg, severity in plural_faults:      # as chk.check_locales files them
+            rec = {"lang": lang, "key": "", "msg": msg}
+            if severity == det.ERROR:
+                result["faults"].append({**rec, "severity": "error"})
+                result["ok"] = False
+            else:
+                result["warnings"].append({**rec, "severity": "warn"})
         if extra:
             result["extra"][lang] = extra
         for issue in issues:
@@ -864,7 +887,7 @@ def kaeris_list_missing_keys(source: str, lang: str, out: str = "",
         }
 
     target_flat = _load_flat(target_path, client)
-    missing, extra, issues = chk.diff_locale(source_flat, target_flat)
+    missing, extra, issues, _faults = _diff_by_target_forms(source_flat, target_flat, lang)
     page, info = _page_keys(missing, source_flat, offset, limit)
     extra_page, extra_total = _cap(extra, _PAGE_MAX)
     issue_page, issue_total = _cap(issues, _STATUS_EXAMPLES)
