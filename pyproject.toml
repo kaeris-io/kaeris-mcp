@@ -27,7 +27,7 @@ dependencies = [
     # Both SDK generations work (the import falls back to 2.x), a third is untested: 2.x
     # already changed what reaches the agent on a failure (R25).
     "mcp>=1.2,<3",
-    "kaeris>=0.2.39",
+    "kaeris>=0.2.47",
 ]
 
 [project.urls]

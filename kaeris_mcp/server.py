@@ -864,7 +864,11 @@ def kaeris_list_missing_keys(source: str, lang: str, out: str = "",
           "missing_values": {"<dotted.key>": "<source text>", ...},   # the same page
           "page": {"total", "returned", "offset", "complete", "next_offset"?, "note"?},
           "extra": ["<dotted.key>", ...], "extra_count": 12,
-          "placeholder_issues": [{"key","missing","added"}, ...], "placeholder_issue_count": 3 }
+          "placeholder_issues": [{"key","missing","added"}, ...], "placeholder_issue_count": 3,
+          "plural_faults": [{"severity": "error"|"warn", "msg"}, ...], "plural_fault_count": 2 }
+        "plural_faults": plural forms the target language needs that its file lacks, as
+        `kaeris check` says them (a Polish `items_few`; "error" fails check). They are not in
+        "missing" — the source has no such key — kaeris_translate writes them.
     """
     out_dir = _resolve_out_dir(source, out)
     client = _client()                 # anonymous — /api/parse needs no auth and costs nothing
@@ -884,10 +888,16 @@ def kaeris_list_missing_keys(source: str, lang: str, out: str = "",
             "page": info,
             "extra": [], "extra_count": 0,
             "placeholder_issues": [], "placeholder_issue_count": 0,
+            "plural_faults": [], "plural_fault_count": 0,
         }
 
     target_flat = _load_flat(target_path, client)
-    missing, extra, issues, _faults = _diff_by_target_forms(source_flat, target_flat, lang)
+    missing, extra, issues, faults = _diff_by_target_forms(source_flat, target_flat, lang)
+    # Kept, not dropped (critic round 3): a Polish file without few/many read "nothing
+    # missing" here while `kaeris check` failed on it. Severity as kaeris_status files it.
+    plural_faults = [{"severity": "error" if severity == det.ERROR else "warn", "msg": msg}
+                     for msg, severity in faults]
+    fault_page, fault_total = _cap(plural_faults, _STATUS_EXAMPLES)
     page, info = _page_keys(missing, source_flat, offset, limit)
     extra_page, extra_total = _cap(extra, _PAGE_MAX)
     issue_page, issue_total = _cap(issues, _STATUS_EXAMPLES)
@@ -902,6 +912,8 @@ def kaeris_list_missing_keys(source: str, lang: str, out: str = "",
         "extra_count": extra_total,
         "placeholder_issues": issue_page,
         "placeholder_issue_count": issue_total,
+        "plural_faults": fault_page,
+        "plural_fault_count": fault_total,
     }
 
 

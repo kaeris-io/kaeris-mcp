@@ -85,9 +85,52 @@ class PluralFormsAreOwedNotExtra(unittest.TestCase):
         self.assertEqual(sorted(f["msg"] for f in status["faults"]),
                          sorted(f["msg"] for f in cli["faults"]))
 
+    def test_list_missing_keys_names_the_forms_check_asks_for(self):
+        """Critic round 3: kaeris_list_missing_keys dropped the plural faults. For a Polish file
+        without few/many an agent read "nothing missing" while `kaeris check` failed. The faults
+        come back as kaeris_status gives them: errors (RED in check) and warnings."""
+        target = {"items_one": "{{count}} element", "items_other": "{{count}} elementów",
+                  "day": {"one": "Jeden dzień", "other": "{{count}} dni"}, "title": "Skrzynka"}
+        cli = self._cli("pl", target)
+        _, keys = self._mcp("pl", target)
+        self.assertEqual(keys["missing"], [], keys)
+        said = keys["plural_faults"]
+        self.assertEqual(sorted(f["msg"] for f in said if f["severity"] == "error"),
+                         sorted(f["msg"] for f in cli["faults"]), (said, cli))
+        self.assertTrue(any("items_few" in f["msg"] for f in said), said)
+        self.assertTrue(any("day" in f["msg"] for f in said), said)
+        self.assertEqual(keys["plural_fault_count"], len(said))
+
     def test_a_key_the_source_does_not_have_is_still_extra(self):
         status, _ = self._mcp("pl", dict(PL, old_banner="Stary baner"))
         self.assertEqual(status["extra"], {"pl": ["old_banner"]}, status)
+
+
+class TheFloorIsAKaerisThatReadsPluralForms(unittest.TestCase):
+    """Critic round 3: the package required kaeris>=0.2.39, and with kaeris 0.2.39–0.2.44 (no
+    plural-set reading before 0.2.45) kaeris_status still called Polish items_few/items_many
+    extra/stale (4 failed above on a 0.2.44 tree). The floor is 0.2.47: the public
+    `check.plural_set_faults`, and the client that asks the server for every form (`plurals=cldr`)
+    and merges a new form beside its siblings — the files kaeris_status then reads. Every place
+    that installs kaeris says the same floor."""
+    FLOOR = (0, 2, 47)
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def _floors(self, rel):
+        import re
+        path = os.path.join(self.ROOT, rel)
+        if not os.path.isfile(path):
+            return None
+        text = open(path, encoding="utf-8").read()
+        return [tuple(int(x) for x in v.split(".")) for v in re.findall(r'"kaeris>=([0-9.]+)"', text)]
+
+    def test_every_install_asks_for_0_2_47(self):
+        for rel in ("pyproject.toml", "Dockerfile", os.path.join("bundle", "server", "main.py")):
+            floors = self._floors(rel)
+            if floors is None:
+                continue          # the bundle lives only in the i18n_tool copy
+            self.assertTrue(floors, rel)
+            self.assertTrue(all(f == self.FLOOR for f in floors), (rel, floors))
 
 
 if __name__ == "__main__":
